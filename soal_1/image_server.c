@@ -2,29 +2,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <dirent.h>
-#include <fcntl.h>
+#include <time.h>
 #include <signal.h>
-#include <arpa/inet.h>
+#include <fcntl.h>
+#include <dirent.h>
 
 #define PORT 8080
-#define MAX_BUFFER 4096
-#define DATABASE_DIR "server/database"
-#define LOG_FILE "server/server.log"
+#define BUFFER_SIZE 1024
+#define DATABASE_DIR "database"
+#define LOG_FILE "server.log"
 
-void create_directories() {
-    mkdir("server", 0755);
-    mkdir(DATABASE_DIR, 0755);
-    mkdir("client", 0755);
-    mkdir("client/secrets", 0755);
-}
-
-void log_message(const char *source, const char *action, const char *info) {
+void log_action(const char *source, const char *action, const char *info) {
     time_t now;
     time(&now);
     struct tm *tm_info = localtime(&now);
@@ -39,110 +31,85 @@ void log_message(const char *source, const char *action, const char *info) {
     }
 }
 
-void handle_sigint(int sig) {
-    log_message("Server", "SHUTDOWN", "Server terminated by signal");
-    exit(0);
+void create_database_dir() {
+    struct stat st = {0};
+    if (stat(DATABASE_DIR, &st) == -1) {
+        mkdir(DATABASE_DIR, 0700);
+    }
 }
 
-char* reverse_string(char *str) {
-    if (!str) return NULL;
+char* reverse_string(const char *str) {
+    int length = strlen(str);
+    char *reversed = malloc(length + 1);
     
-    int len = strlen(str);
-    for (int i = 0; i < len / 2; i++) {
-        char temp = str[i];
-        str[i] = str[len - i - 1];
-        str[len - i - 1] = temp;
+    for (int i = 0; i < length; i++) {
+        reversed[i] = str[length - 1 - i];
     }
-    return str;
+    reversed[length] = '\0';
+    
+    return reversed;
 }
 
-char* hex_decode(const char *hex_str, size_t *out_len) {
-    if (!hex_str || strlen(hex_str) % 2 != 0) return NULL;
+char* hex_decode(const char *hex_str) {
+    size_t len = strlen(hex_str);
+    if (len % 2 != 0) return NULL;
     
-    size_t len = strlen(hex_str) / 2;
-    char *bytes = malloc(len + 1);
-    if (!bytes) return NULL;
+    size_t final_len = len / 2;
+    char *decoded = malloc(final_len + 1);
     
-    for (size_t i = 0; i < len; i++) {
-        sscanf(hex_str + 2*i, "%2hhx", &bytes[i]);
+    for (size_t i = 0, j = 0; j < final_len; i += 2, j++) {
+        sscanf(hex_str + i, "%2hhx", &decoded[j]);
     }
-    bytes[len] = '\0';
+    decoded[final_len] = '\0';
     
-    if (out_len) *out_len = len;
-    return bytes;
-}
-
-char* process_text(const char *text) {
-    printf("Debug: Original text length: %zu\n", strlen(text));
-    
-    // First, reverse the text
-    char *reversed = strdup(text);
-    if (!reversed) return NULL;
-    
-    reverse_string(reversed);
-    printf("Debug: Reversed text: %s\n", reversed);
-    
-    // Check if the text contains only hex characters
-    for (size_t i = 0; i < strlen(reversed); i++) {
-        if (!isxdigit(reversed[i])) {
-            printf("Error: Non-hex character found at position %zu: %c\n", i, reversed[i]);
-            free(reversed);
-            return NULL;
-        }
-    }
-    
-    // Hex decode
-    size_t out_len;
-    char *decoded = hex_decode(reversed, &out_len);
-    free(reversed);
-    
-    if (!decoded) {
-        printf("Error: Hex decoding failed\n");
-        return NULL;
-    }
-    
-    printf("Debug: Decoded data length: %zu bytes\n", out_len);
     return decoded;
 }
 
-int save_to_database(const char *data, size_t data_len, char *filename) {
+int save_decrypted_file(const char *text_data, char *filename) {
+    char *reversed = reverse_string(text_data);
+    if (!reversed) return 0;
+    
+    char *decoded = hex_decode(reversed);
+    free(reversed);
+    if (!decoded) return 0;
+    
     time_t now = time(NULL);
     snprintf(filename, 64, "%ld.jpeg", now);
     
-    char path[128];
-    snprintf(path, sizeof(path), "%s/%s", DATABASE_DIR, filename);
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s", DATABASE_DIR, filename);
     
-    FILE *file = fopen(path, "wb");
-    if (!file) return 0;
+    FILE *file = fopen(filepath, "wb");
+    if (!file) {
+        free(decoded);
+        return 0;
+    }
     
-    fwrite(data, 1, data_len, file);
+    fwrite(decoded, 1, strlen(decoded), file);
     fclose(file);
+    free(decoded);
     
     return 1;
 }
 
-int send_file(int client_socket, const char *filename) {
-    char path[128];
-    snprintf(path, sizeof(path), "%s/%s", DATABASE_DIR, filename);
+int send_file_to_client(int client_socket, const char *filename) {
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s", DATABASE_DIR, filename);
     
-    FILE *file = fopen(path, "rb");
-    if (!file) {
-        send(client_socket, "ERROR: File not found", 21, 0);
-        return 0;
-    }
+    FILE *file = fopen(filepath, "rb");
+    if (!file) return 0;
     
     fseek(file, 0, SEEK_END);
     long file_size = ftell(file);
     fseek(file, 0, SEEK_SET);
     
-    // Send file size first
-    send(client_socket, &file_size, sizeof(file_size), 0);
+    write(client_socket, &file_size, sizeof(file_size));
     
-    char buffer[MAX_BUFFER];
+    char buffer[BUFFER_SIZE];
     size_t bytes_read;
     
-    while ((bytes_read = fread(buffer, 1, MAX_BUFFER, file)) > 0) {
-        if (send(client_socket, buffer, bytes_read, 0) < 0) {
+    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
+        if (write(client_socket, buffer, bytes_read) != bytes_read) {
             fclose(file);
             return 0;
         }
@@ -153,54 +120,58 @@ int send_file(int client_socket, const char *filename) {
 }
 
 void handle_client(int client_socket) {
-    char buffer[MAX_BUFFER];
-    int bytes_received;
-    struct sockaddr_in client_addr;
-    socklen_t addr_len = sizeof(client_addr);
-    
-    getpeername(client_socket, (struct sockaddr*)&client_addr, &addr_len);
-    char *client_ip = inet_ntoa(client_addr.sin_addr);
+    char buffer[BUFFER_SIZE];
+    int choice;
     
     while (1) {
-        bytes_received = recv(client_socket, buffer, MAX_BUFFER - 1, 0);
-        if (bytes_received <= 0) break;
+        if (read(client_socket, &choice, sizeof(choice)) <= 0) break;
         
-        buffer[bytes_received] = '\0';
-        
-        if (strncmp(buffer, "DECRYPT:", 8) == 0) {
-            char *text = buffer + 8;
-            log_message("Client", "DECRYPT", "Text data");
+        if (choice == 1) {
+            char filename[256];
+            read(client_socket, filename, sizeof(filename));
             
-            char *decoded = process_text(text);
-            if (!decoded) {
-                send(client_socket, "ERROR: Decryption failed", 24, 0);
-                log_message("Server", "ERROR", "Decryption failed");
+            FILE *file = fopen(filename, "r");
+            if (!file) {
+                write(client_socket, "ERROR", 6);
+                log_action("Server", "ERROR", "Failed to open input file");
                 continue;
             }
             
+            fseek(file, 0, SEEK_END);
+            long file_size = ftell(file);
+            fseek(file, 0, SEEK_SET);
+            
+            char *file_content = malloc(file_size + 1);
+            fread(file_content, 1, file_size, file);
+            file_content[file_size] = '\0';
+            fclose(file);
+            
+            char saved_filename[64];
+            if (save_decrypted_file(file_content, saved_filename)) {
+                write(client_socket, saved_filename, sizeof(saved_filename));
+                log_action("Client", "DECRYPT", "Text data");
+                log_action("Server", "SAVE", saved_filename);
+            } else {
+                write(client_socket, "ERROR", 6);
+                log_action("Server", "ERROR", "Failed to decrypt file");
+            }
+            
+            free(file_content);
+        }
+        else if (choice == 2) {
             char filename[64];
-            if (save_to_database(decoded, strlen(decoded), filename)) {
-                send(client_socket, filename, strlen(filename), 0);
-                log_message("Server", "SAVE", filename);
-            } else {
-                send(client_socket, "ERROR: Failed to save file", 26, 0);
-                log_message("Server", "ERROR", "Failed to save file");
-            }
+            read(client_socket, filename, sizeof(filename));
             
-            free(decoded);
-        }
-        else if (strncmp(buffer, "DOWNLOAD:", 9) == 0) {
-            char *filename = buffer + 9;
-            log_message("Client", "DOWNLOAD", filename);
-            
-            if (send_file(client_socket, filename)) {
-                log_message("Server", "UPLOAD", filename);
+            if (send_file_to_client(client_socket, filename)) {
+                log_action("Client", "DOWNLOAD", filename);
+                log_action("Server", "UPLOAD", filename);
             } else {
-                log_message("Server", "ERROR", "File upload failed");
+                write(client_socket, "ERROR", 6);
+                log_action("Server", "ERROR", "Failed to find file for download");
             }
         }
-        else if (strncmp(buffer, "EXIT", 4) == 0) {
-            log_message("Client", "EXIT", "Client requested to exit");
+        else if (choice == 3) {
+            log_action("Client", "EXIT", "Client requested to exit");
             break;
         }
     }
@@ -209,61 +180,53 @@ void handle_client(int client_socket) {
 }
 
 int main() {
-    create_directories();
-    signal(SIGINT, handle_sigint);
+    create_database_dir();
     
-    int server_fd, client_socket;
-    struct sockaddr_in address;
+    int server_socket, client_socket;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+    
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+    
     int opt = 1;
-    int addrlen = sizeof(address);
+    setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-        perror("socket failed");
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(PORT);
+    
+    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Bind failed");
         exit(EXIT_FAILURE);
     }
     
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        perror("setsockopt SO_REUSEADDR");
+    if (listen(server_socket, 5) < 0) {
+        perror("Listen failed");
         exit(EXIT_FAILURE);
     }
     
-    #ifdef SO_REUSEPORT
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) < 0) {
-        perror("setsockopt SO_REUSEPORT");
-        exit(EXIT_FAILURE);
-    }
-    #endif
+    printf("Server running on port %d...\n", PORT);
+    log_action("Server", "START", "Server started");
     
-    
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
-    
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        perror("bind failed");
-        exit(EXIT_FAILURE);
-    }
-    
-    if (listen(server_fd, 3) < 0) {
-        perror("listen");
-        exit(EXIT_FAILURE);
-    }
-    
-    // Daemonize the server
     if (fork() != 0) {
         return 0;
     }
     
-    log_message("Server", "STARTUP", "Server started");
-    
     while (1) {
-        if ((client_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
-            log_message("Server", "ERROR", "Accept failed");
+        client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &addr_len);
+        if (client_socket < 0) {
+            perror("Accept failed");
             continue;
         }
         
+        log_action("Server", "CONNECT", "New client connected");
+        
         if (fork() == 0) {
-            close(server_fd);
+            close(server_socket);
             handle_client(client_socket);
             exit(0);
         }
@@ -271,5 +234,6 @@ int main() {
         close(client_socket);
     }
     
+    close(server_socket);
     return 0;
 }
