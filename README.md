@@ -16,7 +16,7 @@
 `gcc image_server.c -o server/image_server`
 
 3. Compile the client:
-`gcc image_client.c -o client/image_client`
+`gcc image_client.c -o client/image_client -lcurl`
 
 4. Start the server (as a daemon):
 `./server/image_server`
