@@ -8,7 +8,7 @@
 
 ## SOAL 1 (Ahmad Yazid Arifuddin)
  
-#Building and Running the System
+# Building and Running the System
 1. First, create the necessary directory structure:
 `mkdir -p server/database client/secrets`
 
