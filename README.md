@@ -8,7 +8,7 @@
 
 ## SOAL 1 (Ahmad Yazid Arifuddin)
  
-# Building and Running the System
+# Cara menjalankan program nya
 1. First, create the necessary directory structure:
 `mkdir -p server/database client/secrets`
 
@@ -30,3 +30,18 @@ kemudian
 `kill <PID>`
 
 ## SOAL 2 (Ahmad Yazid Arifuddin)
+1. Compile file delivery_agent
+`gcc delivery_agent.c -o delivery_agent -lcurl`
+
+2. Comple file dispatcher
+`gcc dispatcher.c -o dispatcher -lcurl`
+
+3. Run code delivery_agent nya
+`./delivery_agent` kemudian akan mendownload csv nya secara otomatis dan melakukan express
+
+4. Run code dispatcher
+`./dispatcher -list` untuk melihat list kiriman
+`./dispatcher -deliver <nama>` untuk mengirim yang masih pending
+`./dispatcher -status <status>` untuk mengecek status kiriman
+
+
