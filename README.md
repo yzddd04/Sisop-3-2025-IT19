@@ -9,7 +9,6 @@
 
 ## SOAL 1 (Ahmad Yazid Arifuddin)
  
-# Cara menjalankan program nya
 1. First, create the necessary directory structure:
 `mkdir -p server/database client/secrets`
 
