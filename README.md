@@ -7,5 +7,10 @@
 |                          |            |
 
 ## SOAL 1 (Ahmad Yazid Arifuddin)
+`mkdir -p server/database client/secrets`
+
+cara memberhentikan server 
+`sudo lsof -i :8080` kemudian
+`kill <PID>`
 
 ## SOAL 2 (Ahmad Yazid Arifuddin)
