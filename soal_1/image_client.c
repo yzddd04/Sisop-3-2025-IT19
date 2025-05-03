@@ -2,217 +2,340 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <curl/curl.h>
+#include <errno.h>
+#include <limits.h>
 
 #define PORT 8080
-#define BUFFER_SIZE 1024
-#define SERVER_IP "127.0.0.1"
-#define SECRETS_DIR "secrets"
-#define DOWNLOAD_URL "https://drive.google.com/uc?export=download&id=15mnXpYUimVP1F5Df7qd_Ahbjor3o1cVw"
+#define BUFFER_SIZE 4096
+#define SECRETS_DIR "client/secrets/"
+#define GDRIVE_URL "https://drive.google.com/uc?export=download&id=15mnXpYUimVP1F5Df7qd_Ahbjor3o1cVw"
+#define ZIP_FILE "secrets.zip"
+#define MAX_PATH 4096
 
-// Fungsi untuk menulis data download ke file
 size_t write_data(void *ptr, size_t size, size_t nmemb, FILE *stream) {
     return fwrite(ptr, size, nmemb, stream);
 }
 
-// Fungsi untuk mendownload file dari Google Drive
-int download_secrets() {
+int download_and_extract_secrets() {
     CURL *curl;
     FILE *fp;
     CURLcode res;
-    char outfilename[FILENAME_MAX] = "secrets.zip";
     
+    printf("Preparing secret files...\n");
+    
+    // Create target directory if it doesn't exist
+    if (mkdir(SECRETS_DIR, 0755) == -1 && errno != EEXIST) {
+        perror("Error creating secrets directory");
+        return 0;
+    }
+    
+    // Check if files already exist
+    DIR *dir = opendir(SECRETS_DIR);
+    if (dir) {
+        struct dirent *entry;
+        int file_count = 0;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strstr(entry->d_name, "input_")) {
+                file_count++;
+            }
+        }
+        closedir(dir);
+        
+        if (file_count >= 5) {  // Assuming there are 5 input files
+            printf("Secret files already exist, skipping download.\n");
+            return 1;
+        }
+    }
+
+    printf("Downloading secret files...\n");
+    curl_global_init(CURL_GLOBAL_DEFAULT);
     curl = curl_easy_init();
-    if (curl) {
-        fp = fopen(outfilename, "wb");
-        if (!fp) {
-            fprintf(stderr, "Failed to create file %s\n", outfilename);
-            return 0;
-        }
-        
-        curl_easy_setopt(curl, CURLOPT_URL, DOWNLOAD_URL);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-        
-        res = curl_easy_perform(curl);
-        if (res != CURLE_OK) {
-            fprintf(stderr, "Download failed: %s\n", curl_easy_strerror(res));
-            fclose(fp);
-            remove(outfilename);
-            curl_easy_cleanup(curl);
-            return 0;
-        }
-        
-        fclose(fp);
+    
+    if (!curl) {
+        fprintf(stderr, "Error initializing curl\n");
+        return 0;
+    }
+
+    fp = fopen(ZIP_FILE, "wb");
+    if (!fp) {
+        perror("Error creating zip file");
         curl_easy_cleanup(curl);
-        
-        // Ekstrak file zip
-        char command[256];
-        snprintf(command, sizeof(command), "unzip -o %s -d %s", outfilename, SECRETS_DIR);
-        if (system(command) != 0) {
-            fprintf(stderr, "Failed to extract secrets\n");
-            return 0;
+        return 0;
+    }
+    
+    curl_easy_setopt(curl, CURLOPT_URL, GDRIVE_URL);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    
+    res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        fprintf(stderr, "Download failed: %s\n", curl_easy_strerror(res));
+        fclose(fp);
+        remove(ZIP_FILE);
+        curl_easy_cleanup(curl);
+        return 0;
+    }
+    
+    fclose(fp);
+    curl_easy_cleanup(curl);
+    curl_global_cleanup();
+
+    printf("Extracting files...\n");
+    char command[512];
+    snprintf(command, sizeof(command), "unzip -j -o %s -d %s", ZIP_FILE, SECRETS_DIR);
+    
+    int ret = system(command);
+    if (ret != 0) {
+        fprintf(stderr, "Error extracting files (code %d)\n", ret);
+        remove(ZIP_FILE);
+        return 0;
+    }
+    
+    if (remove(ZIP_FILE) != 0) {
+        perror("Warning: Could not remove zip file");
+    }
+    
+    printf("Secret files ready!\n");
+    return 1;
+}
+
+int connect_to_server() {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        perror("Socket creation failed");
+        return -1;
+    }
+
+    struct sockaddr_in serv_addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(PORT)
+    };
+
+    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+        perror("Invalid address");
+        close(sock);
+        return -1;
+    }
+
+    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("Connection failed");
+        close(sock);
+        return -1;
+    }
+
+    return sock;
+}
+
+void send_file_to_server(int sock, const char *filename) {
+    char fullpath[MAX_PATH];
+    snprintf(fullpath, sizeof(fullpath), "%s%s", SECRETS_DIR, filename);
+    
+    FILE *fp = fopen(fullpath, "r");
+    if (!fp) {
+        perror("Error opening file");
+        return;
+    }
+
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    char *file_content = malloc(file_size + 1);
+    if (!file_content) {
+        perror("Memory allocation failed");
+        fclose(fp);
+        return;
+    }
+
+    if (fread(file_content, 1, file_size, fp) != (size_t)file_size) {
+        perror("Error reading file");
+        free(file_content);
+        fclose(fp);
+        return;
+    }
+    file_content[file_size] = '\0';
+    fclose(fp);
+
+    int option = 1;
+    if (write(sock, &option, sizeof(option)) != sizeof(option)) {
+        perror("Error sending option");
+        free(file_content);
+        return;
+    }
+
+    size_t filename_len = strlen(filename);
+    if (write(sock, &filename_len, sizeof(filename_len)) != sizeof(filename_len) ||
+        write(sock, filename, filename_len) != filename_len) {
+        perror("Error sending filename");
+        free(file_content);
+        return;
+    }
+
+    if (write(sock, &file_size, sizeof(file_size)) != sizeof(file_size) ||
+        write(sock, file_content, file_size) != (ssize_t)file_size) {
+        perror("Error sending file content");
+        free(file_content);
+        return;
+    }
+
+    free(file_content);
+
+    char response[8] = {0};
+    if (read(sock, response, sizeof(response) - 1) <= 0) {
+        perror("Error reading response");
+        return;
+    }
+
+    if (strcmp(response, "SUCCESS") == 0) {
+        char output_filename[64] = {0};
+        if (read(sock, output_filename, sizeof(output_filename) - 1) <= 0) {
+            perror("Error reading output filename");
+            return;
         }
-        
-        remove(outfilename);
-        return 1;
-    }
-    return 0;
-}
-
-void create_secrets_dir() {
-    struct stat st = {0};
-    if (stat(SECRETS_DIR, &st) == -1) {
-        mkdir(SECRETS_DIR, 0700);
+        printf("Server: Text decrypted and saved as %s\n", output_filename);
+    } else {
+        printf("Error: Failed to process file\n");
     }
 }
 
-void display_menu() {
-    printf("\nImage Decoder Client\n");
+void download_file_from_server(int sock, const char *filename) {
+    int option = 2;
+    if (write(sock, &option, sizeof(option)) != sizeof(option)) {
+        perror("Error sending option");
+        return;
+    }
+
+    size_t filename_len = strlen(filename);
+    if (write(sock, &filename_len, sizeof(filename_len)) != sizeof(filename_len) ||
+        write(sock, filename, filename_len) != filename_len) {
+        perror("Error sending filename");
+        return;
+    }
+
+    long file_size;
+    if (read(sock, &file_size, sizeof(file_size)) != sizeof(file_size)) {
+        perror("Error reading file size");
+        return;
+    }
+
+    if (file_size <= 0) {
+        printf("Error: File not found on server\n");
+        return;
+    }
+
+    char *file_content = malloc(file_size);
+    if (!file_content) {
+        perror("Memory allocation failed");
+        return;
+    }
+
+    size_t total_read = 0;
+    while (total_read < (size_t)file_size) {
+        ssize_t bytes_read = read(sock, file_content + total_read, file_size - total_read);
+        if (bytes_read <= 0) {
+            perror("Error receiving file content");
+            free(file_content);
+            return;
+        }
+        total_read += bytes_read;
+    }
+
+    FILE *fp = fopen(filename, "wb");
+    if (!fp) {
+        perror("Error creating output file");
+        free(file_content);
+        return;
+    }
+
+    if (fwrite(file_content, 1, file_size, fp) != (size_t)file_size) {
+        perror("Error writing to file");
+        fclose(fp);
+        free(file_content);
+        return;
+    }
+
+    fclose(fp);
+    free(file_content);
+    printf("Success! Image saved as %s\n", filename);
+}
+
+void print_menu() {
+    printf("\n--------------------------------\n");
+    printf("|      Image Decoder Client     |\n");
+    printf("--------------------------------\n\n");
     printf("1. Send input file to server\n");
     printf("2. Download file from server\n");
     printf("3. Exit\n");
     printf(">> ");
 }
 
-int send_file_request(int sock, const char *filename) {
-    write(sock, filename, 256);
-    
-    char response[64];
-    read(sock, response, sizeof(response));
-    
-    if (strcmp(response, "ERROR") == 0) {
-        printf("Error: Failed to process file\n");
-        return 0;
-    }
-    
-    printf("Server: Text decrypted and saved as %s\n", response);
-    return 1;
-}
-
-int download_file(int sock, const char *filename) {
-    write(sock, filename, 64);
-    
-    long file_size;
-    if (read(sock, &file_size, sizeof(file_size)) <= 0) {
-        printf("Error: Failed to get file size\n");
-        return 0;
-    }
-    
-    if (file_size <= 0) {
-        printf("Error: File not found on server\n");
-        return 0;
-    }
-    
-    FILE *file = fopen(filename, "wb");
-    if (!file) {
-        printf("Error: Failed to create file\n");
-        return 0;
-    }
-    
-    char buffer[BUFFER_SIZE];
-    long remaining = file_size;
-    
-    while (remaining > 0) {
-        int chunk = remaining > BUFFER_SIZE ? BUFFER_SIZE : remaining;
-        int bytes_read = read(sock, buffer, chunk);
-        
-        if (bytes_read <= 0) {
-            fclose(file);
-            remove(filename);
-            printf("Error: Failed to download file\n");
-            return 0;
-        }
-        
-        fwrite(buffer, 1, bytes_read, file);
-        remaining -= bytes_read;
-    }
-    
-    fclose(file);
-    printf("Success! Image saved as %s\n", filename);
-    return 1;
-}
-
 int main() {
-    // Inisialisasi libcurl
-    curl_global_init(CURL_GLOBAL_DEFAULT);
+    printf("./client\n");
     
-    // Buat folder secrets dan download file
-    create_secrets_dir();
-    printf("Downloading secret files...\n");
-    if (!download_secrets()) {
-        fprintf(stderr, "Warning: Failed to download secret files\n");
-    } else {
-        printf("Secret files downloaded successfully to %s/\n", SECRETS_DIR);
+    // Automatically download and prepare secret files
+    if (!download_and_extract_secrets()) {
+        printf("Failed to prepare secret files. Exiting.\n");
+        return 1;
     }
     
-    // Koneksi ke server
-    int sock = 0;
-    struct sockaddr_in serv_addr;
-    
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        printf("\nSocket creation error\n");
-        curl_global_cleanup();
-        return -1;
+    int sock = connect_to_server();
+    if (sock < 0) {
+        return 1;
     }
     
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
+    printf("Connected to address 127.0.0.1:%d\n", PORT);
     
-    if (inet_pton(AF_INET, SERVER_IP, &serv_addr.sin_addr) <= 0) {
-        printf("\nInvalid address/Address not supported\n");
-        curl_global_cleanup();
-        return -1;
-    }
-    
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        printf("\nConnection Failed\n");
-        curl_global_cleanup();
-        return -1;
-    }
-    
-    printf("Connected to address %s:%d\n", SERVER_IP, PORT);
-    
-    int choice;
-    char filename[256];
-    
-    while (1) {
-        display_menu();
-        scanf("%d", &choice);
+    int running = 1;
+    while (running) {
+        print_menu();
+        
+        int option;
+        if (scanf("%d", &option) != 1) {
+            printf("Invalid input\n");
+            while (getchar() != '\n');
+            continue;
+        }
         while (getchar() != '\n');
         
-        write(sock, &choice, sizeof(choice));
-        
-        switch (choice) {
-            case 1:
+        switch (option) {
+            case 1: {
                 printf("Enter the file name: ");
-                scanf("%255s", filename);
-                send_file_request(sock, filename);
+                char filename[256];
+                if (scanf("%255s", filename) != 1) {
+                    printf("Invalid filename\n");
+                    break;
+                }
+                send_file_to_server(sock, filename);
                 break;
-                
-            case 2:
+            }
+            case 2: {
                 printf("Enter the file name: ");
-                scanf("%255s", filename);
-                download_file(sock, filename);
+                char filename[256];
+                if (scanf("%255s", filename) != 1) {
+                    printf("Invalid filename\n");
+                    break;
+                }
+                download_file_from_server(sock, filename);
                 break;
-                
-            case 3:
-                printf("Exiting...\n");
-                close(sock);
-                curl_global_cleanup();
-                return 0;
-                
+            }
+            case 3: {
+                int option = 3;
+                write(sock, &option, sizeof(option));
+                running = 0;
+                break;
+            }
             default:
-                printf("Invalid choice. Please try again.\n");
-                break;
+                printf("Invalid option\n");
         }
     }
     
     close(sock);
-    curl_global_cleanup();
     return 0;
 }

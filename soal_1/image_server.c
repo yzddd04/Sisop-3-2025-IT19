@@ -2,175 +2,187 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/types.h>
+#include <netinet/in.h>
 #include <time.h>
-#include <signal.h>
+#include <sys/stat.h>
 #include <fcntl.h>
-#include <dirent.h>
+#include <signal.h>
+#include <arpa/inet.h>
 
 #define PORT 8080
-#define BUFFER_SIZE 1024
-#define DATABASE_DIR "database"
-#define LOG_FILE "server.log"
+#define BUFFER_SIZE 4096
+#define DATABASE_DIR "server/database/"
+#define LOG_FILE "server/server.log"
 
 void log_action(const char *source, const char *action, const char *info) {
     time_t now;
     time(&now);
     struct tm *tm_info = localtime(&now);
     
-    char timestamp[20];
-    strftime(timestamp, 20, "%Y-%m-%d %H:%M:%S", tm_info);
-    
     FILE *log_file = fopen(LOG_FILE, "a");
     if (log_file) {
-        fprintf(log_file, "[%s][%s]: [%s] [%s]\n", source, timestamp, action, info);
+        fprintf(log_file, "[%s][%04d-%02d-%02d %02d:%02d:%02d]: [%s] [%s]\n",
+                source,
+                tm_info->tm_year + 1900, tm_info->tm_mon + 1, tm_info->tm_mday,
+                tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec,
+                action, info);
         fclose(log_file);
     }
 }
 
-void create_database_dir() {
-    struct stat st = {0};
-    if (stat(DATABASE_DIR, &st) == -1) {
-        mkdir(DATABASE_DIR, 0700);
+char* reverse_string(char *str) {
+    if (!str) return NULL;
+    
+    int len = strlen(str);
+    for (int i = 0; i < len / 2; i++) {
+        char temp = str[i];
+        str[i] = str[len - i - 1];
+        str[len - i - 1] = temp;
     }
+    return str;
 }
 
-char* reverse_string(const char *str) {
-    int length = strlen(str);
-    char *reversed = malloc(length + 1);
+char* hex_decode(const char *hex_str, size_t *out_len) {
+    if (!hex_str || strlen(hex_str) % 2 != 0) return NULL;
     
-    for (int i = 0; i < length; i++) {
-        reversed[i] = str[length - 1 - i];
+    size_t len = strlen(hex_str) / 2;
+    char *bytes = malloc(len + 1);
+    if (!bytes) return NULL;
+    
+    for (size_t i = 0; i < len; i++) {
+        sscanf(hex_str + 2 * i, "%2hhx", &bytes[i]);
     }
-    reversed[length] = '\0';
+    bytes[len] = '\0';
     
-    return reversed;
+    if (out_len) *out_len = len;
+    return bytes;
 }
 
-char* hex_decode(const char *hex_str) {
-    size_t len = strlen(hex_str);
-    if (len % 2 != 0) return NULL;
-    
-    size_t final_len = len / 2;
-    char *decoded = malloc(final_len + 1);
-    
-    for (size_t i = 0, j = 0; j < final_len; i += 2, j++) {
-        sscanf(hex_str + i, "%2hhx", &decoded[j]);
-    }
-    decoded[final_len] = '\0';
-    
-    return decoded;
-}
-
-int save_decrypted_file(const char *text_data, char *filename) {
-    char *reversed = reverse_string(text_data);
+int decrypt_and_save(const char *text_data, char *filename) {
+    // Reverse the text
+    char *reversed = strdup(text_data);
     if (!reversed) return 0;
+    reverse_string(reversed);
     
-    char *decoded = hex_decode(reversed);
+    // Hex decode
+    size_t decoded_len;
+    char *decoded = hex_decode(reversed, &decoded_len);
     free(reversed);
     if (!decoded) return 0;
     
+    // Generate timestamp filename
     time_t now = time(NULL);
     snprintf(filename, 64, "%ld.jpeg", now);
     
-    char filepath[128];
-    snprintf(filepath, sizeof(filepath), "%s/%s", DATABASE_DIR, filename);
+    // Save to database
+    char filepath[256];
+    snprintf(filepath, sizeof(filepath), "%s%s", DATABASE_DIR, filename);
     
-    FILE *file = fopen(filepath, "wb");
-    if (!file) {
+    FILE *fp = fopen(filepath, "wb");
+    if (!fp) {
         free(decoded);
         return 0;
     }
     
-    fwrite(decoded, 1, strlen(decoded), file);
-    fclose(file);
+    fwrite(decoded, 1, decoded_len, fp);
+    fclose(fp);
     free(decoded);
     
     return 1;
 }
 
-int send_file_to_client(int client_socket, const char *filename) {
-    char filepath[128];
-    snprintf(filepath, sizeof(filepath), "%s/%s", DATABASE_DIR, filename);
+int send_file(int client_socket, const char *filename) {
+    char filepath[256];
+    snprintf(filepath, sizeof(filepath), "%s%s", DATABASE_DIR, filename);
     
-    FILE *file = fopen(filepath, "rb");
-    if (!file) return 0;
+    FILE *fp = fopen(filepath, "rb");
+    if (!fp) return 0;
     
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
     
+    // Send file size first
     write(client_socket, &file_size, sizeof(file_size));
     
     char buffer[BUFFER_SIZE];
     size_t bytes_read;
-    
-    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
+    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, fp)) > 0) {
         if (write(client_socket, buffer, bytes_read) != bytes_read) {
-            fclose(file);
+            fclose(fp);
             return 0;
         }
     }
     
-    fclose(file);
+    fclose(fp);
     return 1;
 }
 
 void handle_client(int client_socket) {
     char buffer[BUFFER_SIZE];
-    int choice;
+    int option;
     
     while (1) {
-        if (read(client_socket, &choice, sizeof(choice)) <= 0) break;
+        // Read client option
+        if (read(client_socket, &option, sizeof(option)) <= 0) break;
         
-        if (choice == 1) {
-            char filename[256];
-            read(client_socket, filename, sizeof(filename));
+        if (option == 1) { // Decrypt and save
+            // Read filename length
+            size_t filename_len;
+            read(client_socket, &filename_len, sizeof(filename_len));
             
-            FILE *file = fopen(filename, "r");
-            if (!file) {
-                write(client_socket, "ERROR", 6);
-                log_action("Server", "ERROR", "Failed to open input file");
-                continue;
-            }
+            // Read filename
+            char filename[filename_len + 1];
+            read(client_socket, filename, filename_len);
+            filename[filename_len] = '\0';
             
-            fseek(file, 0, SEEK_END);
-            long file_size = ftell(file);
-            fseek(file, 0, SEEK_SET);
+            // Read file content length
+            size_t file_content_len;
+            read(client_socket, &file_content_len, sizeof(file_content_len));
             
-            char *file_content = malloc(file_size + 1);
-            fread(file_content, 1, file_size, file);
-            file_content[file_size] = '\0';
-            fclose(file);
+            // Read file content
+            char file_content[file_content_len + 1];
+            read(client_socket, file_content, file_content_len);
+            file_content[file_content_len] = '\0';
             
-            char saved_filename[64];
-            if (save_decrypted_file(file_content, saved_filename)) {
-                write(client_socket, saved_filename, sizeof(saved_filename));
-                log_action("Client", "DECRYPT", "Text data");
-                log_action("Server", "SAVE", saved_filename);
+            log_action("Client", "DECRYPT", filename);
+            
+            // Process and save
+            char output_filename[64];
+            int success = decrypt_and_save(file_content, output_filename);
+            
+            if (success) {
+                write(client_socket, "SUCCESS", 8);
+                write(client_socket, output_filename, strlen(output_filename) + 1);
+                log_action("Server", "SAVE", output_filename);
             } else {
-                write(client_socket, "ERROR", 6);
-                log_action("Server", "ERROR", "Failed to decrypt file");
+                write(client_socket, "FAILURE", 8);
             }
-            
-            free(file_content);
         }
-        else if (choice == 2) {
-            char filename[64];
-            read(client_socket, filename, sizeof(filename));
+        else if (option == 2) { // Download file
+            // Read filename length
+            size_t filename_len;
+            read(client_socket, &filename_len, sizeof(filename_len));
             
-            if (send_file_to_client(client_socket, filename)) {
-                log_action("Client", "DOWNLOAD", filename);
+            // Read filename
+            char filename[filename_len + 1];
+            read(client_socket, filename, filename_len);
+            filename[filename_len] = '\0';
+            
+            log_action("Client", "DOWNLOAD", filename);
+            
+            // Try to send file
+            int success = send_file(client_socket, filename);
+            
+            if (success) {
                 log_action("Server", "UPLOAD", filename);
             } else {
-                write(client_socket, "ERROR", 6);
-                log_action("Server", "ERROR", "Failed to find file for download");
+                long file_size = -1;
+                write(client_socket, &file_size, sizeof(file_size));
             }
         }
-        else if (choice == 3) {
+        else if (option == 3) { // Exit
             log_action("Client", "EXIT", "Client requested to exit");
             break;
         }
@@ -180,60 +192,71 @@ void handle_client(int client_socket) {
 }
 
 int main() {
-    create_database_dir();
+    // Create database directory if not exists
+    mkdir("server", 0755);
+    mkdir(DATABASE_DIR, 0755);
     
-    int server_socket, client_socket;
-    struct sockaddr_in server_addr, client_addr;
-    socklen_t addr_len = sizeof(client_addr);
+    // Daemonize
+    pid_t pid = fork();
+    if (pid < 0) exit(EXIT_FAILURE);
+    if (pid > 0) exit(EXIT_SUCCESS);
     
-    server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket < 0) {
-        perror("Socket creation failed");
+    umask(0);
+    setsid();
+    
+    // Close standard file descriptors
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
+    
+    // Create socket
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd < 0) {
         exit(EXIT_FAILURE);
     }
     
+    // Set socket options
     int opt = 1;
-    setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(PORT);
+    // Bind
+    struct sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
     
-    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Bind failed");
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
         exit(EXIT_FAILURE);
     }
     
-    if (listen(server_socket, 5) < 0) {
-        perror("Listen failed");
+    // Listen
+    if (listen(server_fd, 3) < 0) {
         exit(EXIT_FAILURE);
     }
     
-    printf("Server running on port %d...\n", PORT);
-    log_action("Server", "START", "Server started");
-    
-    if (fork() != 0) {
-        return 0;
-    }
-    
+    // Server loop
     while (1) {
-        client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &addr_len);
-        if (client_socket < 0) {
-            perror("Accept failed");
+        int client_socket;
+        int addrlen = sizeof(address);
+        
+        client_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+        if (client_socket < 0) continue;
+        
+        // Handle client in a new process
+        pid_t child_pid = fork();
+        if (child_pid < 0) {
+            close(client_socket);
             continue;
         }
         
-        log_action("Server", "CONNECT", "New client connected");
-        
-        if (fork() == 0) {
-            close(server_socket);
+        if (child_pid == 0) { // Child process
+            close(server_fd);
             handle_client(client_socket);
-            exit(0);
+            exit(EXIT_SUCCESS);
+        } else { // Parent process
+            close(client_socket);
         }
-        
-        close(client_socket);
     }
     
-    close(server_socket);
     return 0;
 }
