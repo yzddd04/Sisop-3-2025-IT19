@@ -2,26 +2,41 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include <time.h>
+#include <pthread.h>
+#include <curl/curl.h>
 
 #define MAX_ORDERS 100
+#define MAX_NAME_LENGTH 100
+#define MAX_ADDRESS_LENGTH 200
+
+typedef enum {
+    PENDING,
+    DELIVERED
+} DeliveryStatus;
+
+typedef enum {
+    REGULAR,
+    EXPRESS
+} DeliveryType;
 
 typedef struct {
-    char name[100];
-    char address[200];
-    char type[20];
-    int delivered;
+    char name[MAX_NAME_LENGTH];
+    char address[MAX_ADDRESS_LENGTH];
+    DeliveryType type;
+    DeliveryStatus status;
     char delivered_by[50];
 } Order;
 
 typedef struct {
     Order orders[MAX_ORDERS];
-    int count;
-} SharedMemory;
+    int order_count;
+    pthread_mutex_t mutex;
+} SharedData;
 
-void log_delivery(const char* agent, const char* name, const char* address) {
+void log_delivery(const char* agent_name, const char* name, const char* address, DeliveryType type) {
     time_t now;
     time(&now);
     struct tm *local = localtime(&now);
@@ -32,136 +47,146 @@ void log_delivery(const char* agent, const char* name, const char* address) {
         return;
     }
     
-    fprintf(log_file, "[%02d/%02d/%04d %02d:%02d:%02d] [AGENT %s] Reguler package delivered to %s in %s\n",
+    fprintf(log_file, "[%02d/%02d/%04d %02d:%02d:%02d] [AGENT %s] %s package delivered to %s in %s\n",
             local->tm_mday, local->tm_mon + 1, local->tm_year + 1900,
             local->tm_hour, local->tm_min, local->tm_sec,
-            agent, name, address);
+            agent_name,
+            type == EXPRESS ? "Express" : "Reguler",
+            name, address);
+    
     fclose(log_file);
 }
 
-void deliver_order(const char* name, const char* user) {
-    int shmid = shmget(1234, sizeof(SharedMemory), 0666);
+void deliver_order(const char* agent_name, const char* customer_name) {
+    int shmid = shmget(1234, sizeof(SharedData), 0666);
     if (shmid == -1) {
         perror("shmget failed");
-        return;
+        exit(1);
     }
     
-    SharedMemory *shared_mem = (SharedMemory*)shmat(shmid, NULL, 0);
-    if (shared_mem == (void*)-1) {
+    SharedData* shared_data = (SharedData*)shmat(shmid, NULL, 0);
+    if (shared_data == (void*)-1) {
         perror("shmat failed");
-        return;
+        exit(1);
     }
     
-    for (int i = 0; i < shared_mem->count; i++) {
-        if (strcmp(shared_mem->orders[i].name, name) == 0 && 
-            strcmp(shared_mem->orders[i].type, "Reguler") == 0 &&
-            shared_mem->orders[i].delivered == 0) {
+    pthread_mutex_lock(&shared_data->mutex);
+    
+    for (int i = 0; i < shared_data->order_count; i++) {
+        if (strcmp(shared_data->orders[i].name, customer_name) == 0 && 
+            shared_data->orders[i].type == REGULAR && 
+            shared_data->orders[i].status == PENDING) {
             
-            // Simulate delivery
-            sleep(1 + rand() % 3);
+            shared_data->orders[i].status = DELIVERED;
+            strncpy(shared_data->orders[i].delivered_by, agent_name, 
+                    sizeof(shared_data->orders[i].delivered_by) - 1);
+            shared_data->orders[i].delivered_by[sizeof(shared_data->orders[i].delivered_by) - 1] = '\0';
             
-            shared_mem->orders[i].delivered = 1;
-            strcpy(shared_mem->orders[i].delivered_by, user);
+            log_delivery(agent_name, shared_data->orders[i].name, 
+                        shared_data->orders[i].address, REGULAR);
             
-            log_delivery(user, name, shared_mem->orders[i].address);
-            printf("Order for %s has been delivered by %s\n", name, user);
+            printf("AGENT %s: Delivered %s to %s\n", agent_name, 
+                   shared_data->orders[i].name, shared_data->orders[i].address);
             
-            shmdt(shared_mem);
+            pthread_mutex_unlock(&shared_data->mutex);
+            shmdt(shared_data);
             return;
         }
     }
     
-    printf("No pending Reguler order found for %s\n", name);
-    shmdt(shared_mem);
+    pthread_mutex_unlock(&shared_data->mutex);
+    shmdt(shared_data);
+    printf("No pending Regular order found for %s\n", customer_name);
 }
 
-void check_status(const char* name) {
-    int shmid = shmget(1234, sizeof(SharedMemory), 0666);
+void check_status(const char* customer_name) {
+    int shmid = shmget(1234, sizeof(SharedData), 0666);
     if (shmid == -1) {
         perror("shmget failed");
-        return;
+        exit(1);
     }
     
-    SharedMemory *shared_mem = (SharedMemory*)shmat(shmid, NULL, 0);
-    if (shared_mem == (void*)-1) {
+    SharedData* shared_data = (SharedData*)shmat(shmid, NULL, 0);
+    if (shared_data == (void*)-1) {
         perror("shmat failed");
-        return;
+        exit(1);
     }
     
-    for (int i = 0; i < shared_mem->count; i++) {
-        if (strcmp(shared_mem->orders[i].name, name) == 0) {
-            if (shared_mem->orders[i].delivered) {
-                printf("Status for %s: Delivered by Agent %s\n", name, shared_mem->orders[i].delivered_by);
+    pthread_mutex_lock(&shared_data->mutex);
+    
+    for (int i = 0; i < shared_data->order_count; i++) {
+        if (strcmp(shared_data->orders[i].name, customer_name) == 0) {
+            if (shared_data->orders[i].status == DELIVERED) {
+                printf("Status for %s: Delivered by Agent %s\n", 
+                       customer_name, shared_data->orders[i].delivered_by);
             } else {
-                printf("Status for %s: Pending\n", name);
+                printf("Status for %s: Pending\n", customer_name);
             }
             
-            shmdt(shared_mem);
+            pthread_mutex_unlock(&shared_data->mutex);
+            shmdt(shared_data);
             return;
         }
     }
     
-    printf("No order found for %s\n", name);
-    shmdt(shared_mem);
+    pthread_mutex_unlock(&shared_data->mutex);
+    shmdt(shared_data);
+    printf("No order found for %s\n", customer_name);
 }
 
 void list_orders() {
-    int shmid = shmget(1234, sizeof(SharedMemory), 0666);
+    int shmid = shmget(1234, sizeof(SharedData), 0666);
     if (shmid == -1) {
         perror("shmget failed");
-        return;
+        exit(1);
     }
     
-    SharedMemory *shared_mem = (SharedMemory*)shmat(shmid, NULL, 0);
-    if (shared_mem == (void*)-1) {
+    SharedData* shared_data = (SharedData*)shmat(shmid, NULL, 0);
+    if (shared_data == (void*)-1) {
         perror("shmat failed");
-        return;
+        exit(1);
     }
     
-    printf("\n=== ALL ORDERS ===\n");
-    for (int i = 0; i < shared_mem->count; i++) {
-        printf("%d. %s - %s - %s - %s\n", 
-               i+1, 
-               shared_mem->orders[i].name,
-               shared_mem->orders[i].address,
-               shared_mem->orders[i].type,
-               shared_mem->orders[i].delivered ? "Delivered" : "Pending");
-    }
-    printf("\n");
+    pthread_mutex_lock(&shared_data->mutex);
     
-    shmdt(shared_mem);
+    printf("Order List:\n");
+    printf("%-20s %-10s %-10s %-20s\n", "Name", "Type", "Status", "Delivered By");
+    printf("------------------------------------------------------------\n");
+    
+    for (int i = 0; i < shared_data->order_count; i++) {
+        printf("%-20s %-10s %-10s %-20s\n", 
+               shared_data->orders[i].name,
+               shared_data->orders[i].type == EXPRESS ? "Express" : "Regular",
+               shared_data->orders[i].status == PENDING ? "Pending" : "Delivered",
+               shared_data->orders[i].status == DELIVERED ? shared_data->orders[i].delivered_by : "-");
+    }
+    
+    pthread_mutex_unlock(&shared_data->mutex);
+    shmdt(shared_data);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     if (argc < 2) {
         printf("Usage:\n");
-        printf("  ./dispatcher -deliver [Nama] [User]\n");
-        printf("  ./dispatcher -status [Nama]\n");
+        printf("  ./dispatcher -deliver [Customer Name]\n");
+        printf("  ./dispatcher -status [Customer Name]\n");
         printf("  ./dispatcher -list\n");
         return 1;
     }
-
-    if (strcmp(argv[1], "-deliver") == 0) {
-        if (argc < 3) {
-            printf("Please specify the name and user\n");
-            return 1;
-        }
-        deliver_order(argv[2], argv[3]);
+    
+    if (strcmp(argv[1], "-deliver") == 0 && argc == 3) {
+        deliver_order(getenv("USER"), argv[2]);
     } 
-    else if (strcmp(argv[1], "-status") == 0) {
-        if (argc < 3) {
-            printf("Please specify the name\n");
-            return 1;
-        }
+    else if (strcmp(argv[1], "-status") == 0 && argc == 3) {
         check_status(argv[2]);
-    } 
-    else if (strcmp(argv[1], "-list") == 0) {
+    }
+    else if (strcmp(argv[1], "-list") == 0 && argc == 2) {
         list_orders();
     }
     else {
-        printf("Invalid command\n");
+        printf("Invalid command or arguments\n");
         return 1;
     }
-
+    
     return 0;
 }
