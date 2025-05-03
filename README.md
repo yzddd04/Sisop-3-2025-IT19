@@ -4,7 +4,8 @@
 | Nama                     | Nrp        |
 | ------------------------ | ---------- |
 | Ahmad Yazid Arifuddin    | 5027241040 |
-|                          |            |
+| Muhammad Ziddan Habibi   | 5027241122 |
+| Andi Naufal Zaki         | 5027241059 |
 
 ## SOAL 1 (Ahmad Yazid Arifuddin)
  
@@ -43,5 +44,6 @@ kemudian
 `./dispatcher -list` untuk melihat list kiriman
 `./dispatcher -deliver <nama>` untuk mengirim yang masih pending
 `./dispatcher -status <status>` untuk mengecek status kiriman
+
 
 
