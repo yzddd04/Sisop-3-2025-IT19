@@ -9,7 +9,7 @@
 #define SERVER_PORT 8080
 
 
-// Salin struktur dari dungeon.c
+// struct dari dungeon.c
 typedef struct {
     char name[64];
     int damage;
