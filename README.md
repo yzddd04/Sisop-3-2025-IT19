@@ -8,7 +8,7 @@
 | 2   | Muhammad Ziddan Habibi | 5027241122 |
 | 3   | Andi Naufal Zaki       | 5027241059 |
 
-## Soal 1: "The Legend of Rootkids"
+## Soal 1
 
 ### Deskripsi Soal
 Pada tahun 2045, dunia mengalami kekacauan infrastruktur siber. Sebagai mahasiswa ITS, kita harus kembali ke tahun 2025 untuk memanggil hacker "rootkids" dengan mengubah file teks rahasia menjadi file JPEG menggunakan sistem RPC server-client.
@@ -60,6 +60,48 @@ Pada tahun 2045, dunia mengalami kekacauan infrastruktur siber. Sebagai mahasisw
 
 ### Logging
 - Setiap aksi dicatat dalam `server.log` dengan format:
+
+## Soal 2
+Sistem ini merupakan simulasi sistem pengiriman barang berbasis bahasa C untuk perusahaan ekspedisi **RushGo**, yang bertugas menangani pemrosesan pesanan **Express** dan **Regular** secara terpisah namun terintegrasi.
+
+Terdiri dari dua komponen utama:
+
+- `delivery_agent.c`: Menangani pengiriman **Express** secara otomatis oleh agen
+- `dispatcher.c`: Mengelola pengiriman **Regular** secara manual oleh pengguna melalui terminal
+
+---
+
+## 🧩 Struktur Program
+
+### 1. `delivery_agent.c`
+Agen pengiriman otomatis yang bekerja berdasarkan file `delivery_order.csv` yang diunduh langsung dari Google Drive. Fitur-fitur:
+- Mengunduh file CSV pesanan
+- Menggunakan shared memory (`sysv shm`) untuk menyimpan data pesanan
+- Tiga agen (`A`, `B`, `C`) dipicu dalam thread paralel untuk mengirim **Express**
+- Mencatat semua pengiriman ke dalam `delivery.log`
+
+#### 🔄 Proses Utama
+1. Unduh file CSV dari URL Google Drive
+2. Simpan data pesanan ke shared memory
+3. Thread-thread agen membaca shared memory dan memproses pesanan Express
+4. Menuliskan log pengiriman ke `delivery.log`
+
+---
+
+### 2. `dispatcher.c`
+Program terminal untuk pengguna yang memungkinkan:
+- Pengiriman manual untuk pesanan `Regular`
+- Melihat status pesanan berdasarkan nama pelanggan
+- Menampilkan seluruh daftar pesanan beserta statusnya
+
+#### ⚙️ Perintah CLI
+```bash
+./dispatcher -deliver "Nama Pelanggan"   # Mengirim Regular order
+./dispatcher -status "Nama Pelanggan"    # Cek status order
+./dispatcher -list                       # Daftar seluruh pesanan
+
+## Soal 3
+
 
 
 ## Soal_4
