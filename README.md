@@ -8,6 +8,59 @@
 | 2   | Muhammad Ziddan Habibi | 5027241122 |
 | 3   | Andi Naufal Zaki       | 5027241059 |
 
+## Soal 1: "The Legend of Rootkids"
+
+### Deskripsi Soal
+Pada tahun 2045, dunia mengalami kekacauan infrastruktur siber. Sebagai mahasiswa ITS, kita harus kembali ke tahun 2025 untuk memanggil hacker "rootkids" dengan mengubah file teks rahasia menjadi file JPEG menggunakan sistem RPC server-client.
+
+### Spesifikasi Program
+1. **image_server.c**: Berjalan sebagai daemon, menerima koneksi dari client, memproses file teks, dan menyimpan hasil dekripsi.
+2. **image_client.c**: Menghubungkan ke server, mengirim file teks untuk didekripsi, dan mendownload file JPEG hasil dekripsi.
+
+### Solusi
+#### **image_client.c**
+- **Fungsi Utama**:
+  - `download_and_extract_secrets()`: Mengunduh dan mengekstrak file teks rahasia dari Google Drive.
+  - `connect_to_server()`: Membuat koneksi socket ke server.
+  - `send_file_to_server()`: Mengirim file teks ke server untuk diproses.
+  - `download_file_from_server()`: Mendownload file JPEG hasil dekripsi dari server.
+- **Menu Interaktif**:
+  - Pengguna dapat memilih untuk mengirim file atau mendownload file.
+  - Setiap aksi dicatat dalam log server.
+
+#### **image_server.c**
+- **Fungsi Utama**:
+  - `log_action()`: Mencatat setiap aksi ke dalam file log.
+  - `reverse_string()`: Membalikkan string.
+  - `hex_decode()`: Mengubah string hex menjadi data biner.
+  - `decrypt_and_save()`: Memproses file teks (reverse + hex decode) dan menyimpan sebagai JPEG.
+  - `send_file()`: Mengirim file JPEG ke client.
+- **Daemon**:
+  - Berjalan di background, menerima koneksi dari client, dan memproses permintaan.
+
+### Cara Kerja
+1. **Client**:
+   - Mengunduh file teks rahasia.
+   - Menghubungkan ke server.
+   - Mengirim file teks untuk diproses.
+   - Mendownload hasil dekripsi (JPEG).
+2. **Server**:
+   - Menerima koneksi dari client.
+   - Memproses file teks (reverse + hex decode).
+   - Menyimpan hasil sebagai JPEG.
+   - Mengirim file JPEG kembali ke client saat diminta.
+
+### Error Handling
+- **Client**:
+  - Gagal koneksi ke server.
+  - File input tidak ditemukan.
+- **Server**:
+  - File tidak ditemukan saat dikirim ke client.
+  - Server tetap berjalan meskipun terjadi error.
+
+### Logging
+- Setiap aksi dicatat dalam `server.log` dengan format:
+
 
 ## Soal_4
 
