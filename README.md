@@ -152,6 +152,18 @@ Setelah memilih "Dungeon Info", sistem menampilkan detail dungeon pertama (Dunge
 ![image](https://github.com/user-attachments/assets/b65b5393-48d9-4d37-943d-8b3c36143e25)
 
 
+Fitur pada bagian ini merupakan sistem yang memungkinkan **hunter (pemain)** untuk melihat daftar dungeon yang **tersedia sesuai dengan level mereka**. Dungeon yang sebelumnya telah dibuat oleh sistem akan difilter berdasarkan level minimum yang diperlukan, sehingga hanya dungeon yang dapat diakses oleh hunter (sesuai atau di bawah level hunter) yang akan ditampilkan. Tujuannya adalah untuk membatasi akses dan menjaga keseimbangan permainan.
+
+Tampilan pada gambar menunjukkan antarmuka CLI (Command Line Interface) dengan menu pilihan bernama "**koko's MENU**", di mana opsi pertama adalah "Dungeon List". Setelah memilih opsi tersebut, sistem menampilkan semua dungeon yang dapat diakses oleh hunter, lengkap dengan nama dan persyaratan level minimum. Dalam contoh yang ditampilkan, dua dungeon tersedia dan keduanya membutuhkan **Level 1+**, yang artinya hunter dengan level 1 ke atas dapat memasukinya.
+
+Untuk mengimplementasikan fitur ini, dibutuhkan:
+
+* **Data hunter**, termasuk levelnya.
+* **Struktur data dungeon** seperti sebelumnya (mengandung nama dan level minimum).
+* **Fungsi filter**, yang menyaring dan hanya menampilkan dungeon dengan `minimumLevel <= levelHunter`.
+* Kontrol menu berbasis perulangan dan pengkondisian untuk menangani input dan output interaktif.
+
+Fitur ini menekankan pentingnya **akses selektif berbasis level** agar pemain hanya berinteraksi dengan konten yang sesuai dengan kemampuannya di dalam game.
 
 
 ```c
@@ -176,6 +188,22 @@ void show_available_dungeons(struct SystemData *sys_data, struct Hunter *hunter)
 ### g)
 
 ![image](https://github.com/user-attachments/assets/a5dd3f70-c8cd-4103-bb44-617cc94e523e)
+
+Fitur yang ditampilkan pada bagian ini merupakan sistem **raid atau penaklukan dungeon** oleh hunter. Setelah melihat adanya hunter yang terlalu kuat, sistem menambahkan mekanisme baru di mana dungeon yang berhasil ditaklukkan akan **menghilang dari sistem**, menandakan bahwa dungeon tersebut telah dikuasai. Sebagai gantinya, hunter akan memperoleh **reward peningkatan status** seperti ATK, HP, DEF, dan EXP sesuai dengan atribut dari dungeon tersebut.
+
+Tampilan antarmuka CLI menunjukkan daftar dungeon yang tersedia untuk di-raid (judul: **RAIDABLE DUNGEONS**). Hunter memilih salah satu dungeon berdasarkan daftar, dan setelah sukses melakukan raid, sistem menampilkan notifikasi bahwa raid berhasil dan menunjukkan reward yang diperoleh.
+
+Fitur ini juga mencakup sistem level-up: jika **EXP hunter mencapai 500**, maka hunter akan **naik level** dan nilai EXP akan **di-reset ke 0**, meniru sistem RPG klasik yang berbasis progresi pengalaman.
+
+Untuk mengimplementasikan fitur ini, diperlukan:
+
+* **Struktur data hunter**, yang menyimpan level, exp, atk, hp, dan def.
+* Mekanisme **penambahan stat dan exp** ketika raid berhasil.
+* **Penghapusan dungeon** dari daftar setelah dikuasai.
+* **Cek kondisi EXP**: jika mencapai 500 atau lebih, level bertambah dan exp di-reset.
+
+Fitur ini memperkenalkan elemen **progresi dan pertumbuhan karakter**, serta menjaga dinamika permainan dengan menghapus dungeon yang telah ditaklukkan, mendorong hunter untuk terus mencari tantangan baru.
+
 
 ```c
 void raid_dungeon(struct SystemData *sys_data, struct Hunter *hunter) {
