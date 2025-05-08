@@ -241,6 +241,8 @@ Gambar memperlihatkan:
 ```
 Setelah memilih "Dungeon Info", sistem menampilkan detail dungeon pertama (Dungeon 1).
 
+![Screenshot 2025-05-08 083024](https://github.com/user-attachments/assets/0d98b263-9fd1-435d-bd4e-40fbaf907e24)
+
 
 ### f)
 
@@ -279,6 +281,9 @@ void show_available_dungeons(struct SystemData *sys_data, struct Hunter *hunter)
     getchar();
 }
 ```
+
+![Screenshot 2025-05-08 225441](https://github.com/user-attachments/assets/20948505-8d34-44da-a058-513f54a609e7)
+
 
 ### g)
 
@@ -360,6 +365,9 @@ void raid_dungeon(struct SystemData *sys_data, struct Hunter *hunter) {
     getchar();
 }
 ```
+
+![Screenshot 2025-05-08 225548](https://github.com/user-attachments/assets/2a321cf9-79e8-4325-bfd7-c13a6acfdede)
+
 
 
 ### h)
@@ -450,6 +458,8 @@ void hunter_battle(struct SystemData *sys_data, int attacker_index) {
 }
 ```
 
+![Screenshot 2025-05-08 225742](https://github.com/user-attachments/assets/95f49c33-6b88-4efe-b3cf-77954728cec9)
+
 
 ### i)
 
@@ -479,6 +489,9 @@ void unban_hunter(struct SystemData *sys_data, const char *username) {
 }
 ```
 
+![Screenshot 2025-05-08 230053](https://github.com/user-attachments/assets/d8b45660-404d-4653-bb6c-7f0ec4cba180)
+
+
 ### j)
 
 ![image](https://github.com/user-attachments/assets/dedbb1cc-78d6-4c1a-9de2-9db3eaee19ec)
@@ -499,6 +512,8 @@ void reset_hunter_stats(struct SystemData *sys_data, const char *username) {
     printf("Hunter not found.\n");
 }
 ```
+
+
 
 ### k)
 
