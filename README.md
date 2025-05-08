@@ -124,15 +124,6 @@ else if (choice == 2) {
                 }
       }    
 ```
-Fitur yang ditampilkan dalam gambar adalah sebuah sistem berbasis Command Line Interface (CLI) yang digunakan untuk mengelola informasi dungeon dalam permainan. Salah satu fitur utamanya adalah "Dungeon Info", yang memungkinkan admin melihat daftar semua dungeon yang telah dibuat dalam sistem. Setiap dungeon memiliki beberapa atribut penting, seperti nama dungeon, level minimum yang diperlukan untuk masuk, serta reward yang diberikan, termasuk pengalaman (EXP), attack (ATK), health points (HP), dan defense (DEF). Selain itu, setiap dungeon juga memiliki key unik sebagai identifikasi khusus.
-
-Untuk membangun fitur ini, diperlukan struktur data yang dapat menyimpan informasi dungeon, seperti struct dalam bahasa C atau class dalam C++. Data dungeon bisa disimpan dalam sebuah array atau list, sehingga bisa diakses dan ditampilkan dengan mudah melalui fungsi tertentu. Selain itu, sistem menu CLI dapat dibuat menggunakan switch-case atau loop untuk menangani input pengguna dan menampilkan informasi dungeon secara interaktif. Jika diperlukan, fitur ini juga bisa diperluas dengan file handling, agar data dungeon dapat disimpan dan dimuat kembali saat program dijalankan ulang.
-
-
-### f)
-
-![image](https://github.com/user-attachments/assets/b65b5393-48d9-4d37-943d-8b3c36143e25)
-
 Fitur ini ditambahkan agar admin bisa:
 - Melihat daftar semua dungeon yang telah di-generate.
 - Setiap dungeon memiliki:
@@ -145,14 +136,22 @@ Tampilan Menu Terminal
 Gambar memperlihatkan:
 - Sistem berbasis CLI (Command Line Interface).
 - Menu dengan opsi seperti:
-    1 Hunter Info
-    2 Dungeon Info ← ini yang sedang dipilih
-    3 Generate Dungeon
-    4 Ban Hunter
-    5 Reset Hunter
-    6 Exit
-
+```
+- Hunter Info
+- Dungeon Info ← ini yang sedang dipilih
+- Generate Dungeon
+- Ban Hunter
+- Reset Hunter
+- Exit
+```
 Setelah memilih "Dungeon Info", sistem menampilkan detail dungeon pertama (Dungeon 1).
+
+
+### f)
+
+![image](https://github.com/user-attachments/assets/b65b5393-48d9-4d37-943d-8b3c36143e25)
+
+
 
 
 ```c
