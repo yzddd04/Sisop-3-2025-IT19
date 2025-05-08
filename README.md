@@ -384,6 +384,29 @@ void raid_dungeon(struct SystemData *sys_data, struct Hunter *hunter) {
 
 ![image](https://github.com/user-attachments/assets/b8ad400d-c139-4082-8d63-49d26fe1000c)
 
+
+Fitur yang dijelaskan pada bagian ini adalah **PvP (Player versus Player)**, yaitu sistem pertarungan antar hunter untuk meningkatkan kompetisi. Setiap hunter dapat memilih hunter lain sebagai lawan, dan kekuatan mereka dibandingkan berdasarkan **total stats**, yaitu penjumlahan dari **ATK + HP + DEF**.
+
+Saat hunter memilih lawan, sistem akan menghitung kekuatan masing-masing. Jika **hunter menang**, ia akan mendapatkan **seluruh stats milik lawannya**, sedangkan lawan yang kalah akan **dihapus dari sistem**. Sebaliknya, jika hunter kalah, maka **hunter tersebut yang akan dihapus**, dan **stats-nya berpindah ke lawannya**.
+
+Tampilan antarmuka menunjukkan informasi seperti:
+
+* Nama target
+* Power (kekuatan total) masing-masing hunter
+* Hasil pertarungan (menang/kalah)
+* Proses penghapusan dari shared memory dan transfer stats
+
+Untuk membangun fitur ini, materi yang diperlukan mencakup:
+
+* **Struktur data hunter** dengan atribut ATK, HP, DEF, dan identifier
+* Fungsi untuk menghitung total stats dan membandingkan kekuatan
+* **Pemilihan target** dari daftar hunter yang aktif
+* **Mekanisme transfer stats dan penghapusan data**, yang bisa menggunakan operasi pada array/list atau memory sharing (jika dalam sistem multithread/proses)
+* Penanganan input dan output berbasis CLI untuk tampilan interaktif
+
+Fitur ini memberikan **elemen kompetitif dan risiko tinggi**, karena hunter bisa mendapatkan peningkatan besar atau kehilangan seluruh progres mereka, sehingga mendorong strategi dan perhitungan sebelum bertarung.
+
+
 ```c
 void hunter_battle(struct SystemData *sys_data, int attacker_index) {
     struct Hunter *attacker = &sys_data->hunters[attacker_index];
@@ -475,6 +498,24 @@ void hunter_battle(struct SystemData *sys_data, int attacker_index) {
 
 ![image](https://github.com/user-attachments/assets/30a4ed9d-c265-463b-bd4a-08565d102082)
 
+Deskripsi fitur ini adalah tentang **sistem kontrol dan penalti** terhadap hunter yang melakukan pelanggaran atau kecurangan dalam sistem. Untuk menjaga keseimbangan dan keadilan, Sung Jin Woo menambahkan **fitur ban/unban** hunter dari aktivitas **raid** atau **PvP battle**.
+
+Fitur ini memungkinkan admin atau sistem untuk:
+
+* **Mem-ban (melarang)** hunter tertentu agar tidak dapat melakukan raid atau bertarung dengan hunter lain.
+* Menyimpan status ban secara **terstruktur**, misalnya dalam flag atau status boolean pada data hunter.
+* **Meng-unban** hunter secara manual ketika masa percobaan atau penalti telah selesai, sehingga hunter dapat kembali mengakses fitur raid dan battle.
+
+Implementasi teknis dari fitur ini dapat melibatkan:
+
+* **Penambahan field `is_banned` atau `ban_status`** dalam struktur data hunter.
+* Validasi di awal fungsi `raid()` dan `battle()` untuk memeriksa apakah hunter diban.
+* Fungsi admin `ban_hunter()` dan `unban_hunter()` untuk mengatur status tersebut.
+* Opsi pada menu admin agar bisa memilih hunter dan mengubah status ban-nya.
+
+Fitur ini menambahkan elemen **pengawasan dan manajemen pengguna** dalam sistem, menjaga integritas permainan serta memberi fleksibilitas pada admin untuk menangani penyalahgunaan secara adil.
+
+
 ```c
 void ban_hunter(struct SystemData *sys_data, const char *username) {
     for (int i = 0; i < sys_data->num_hunters; i++) {
@@ -506,6 +547,23 @@ void unban_hunter(struct SystemData *sys_data, const char *username) {
 
 ![image](https://github.com/user-attachments/assets/dedbb1cc-78d6-4c1a-9de2-9db3eaee19ec)
 
+Deskripsi fitur ini adalah tentang **reset stat hunter**, yaitu sistem yang memungkinkan seorang hunter mengatur ulang status mereka ke kondisi awal. Fitur ini dirancang sebagai bentuk **kesempatan kedua** bagi hunter yang mungkin sebelumnya terkena penalti, kalah dalam battle, atau ingin memulai kembali dari awal dengan kondisi standar.
+
+Fungsi utama dari fitur ini:
+
+* Mengembalikan **statistik hunter** (ATK, HP, DEF, EXP, dan Level) ke nilai **default awal**.
+* Dapat diakses oleh admin atau sistem melalui menu khusus.
+* Bisa menjadi bagian dari sistem pemulihan untuk hunter yang sebelumnya di-banned atau kehilangan semua stat dalam PvP.
+
+Secara teknis, implementasinya melibatkan:
+
+* Penyimpanan **nilai default stat** hunter dalam struktur data awal (misalnya: `base_stats`).
+* Fungsi `reset_hunter_stats(hunter_id)` yang akan mengatur ulang semua nilai stat ke nilai default.
+* Validasi agar hanya hunter tertentu (misalnya yang diizinkan oleh admin atau berada dalam kondisi tertentu) yang bisa di-reset.
+
+Fitur ini memperkuat aspek **rehabilitasi dan fleksibilitas** sistem, memberi ruang bagi pemain untuk memperbaiki kesalahan tanpa harus membuat akun atau karakter baru.
+
+
 ```c
 void reset_hunter_stats(struct SystemData *sys_data, const char *username) {
     for (int i = 0; i < sys_data->num_hunters; ++i) {
@@ -523,11 +581,36 @@ void reset_hunter_stats(struct SystemData *sys_data, const char *username) {
 }
 ```
 
+Sebelum di reset :
+![image](https://github.com/user-attachments/assets/968ba67d-26df-42e0-be77-e25d4949a5e0)
+
+setelah direset :
+
+![image](https://github.com/user-attachments/assets/93c8207b-19a6-434a-9afb-4b8a16b25bfa)
+
+pada hunter ese setiap poin kembali ke default awal setelah direset
 
 
 ### k)
 
 ![image](https://github.com/user-attachments/assets/692e7035-05cf-45c6-b129-ddc8fbaa9f46)
+
+Deskripsi fitur ini adalah **notifikasi dungeon dinamis**, yaitu sistem yang secara otomatis memberikan informasi real-time kepada setiap hunter mengenai dungeon yang tersedia dan baru terbuka. Tujuan utama dari fitur ini adalah untuk membuat sistem terasa lebih **hidup, interaktif, dan tidak membosankan** bagi pengguna.
+
+Fitur ini bekerja dengan cara:
+
+* Menampilkan **notifikasi dungeon baru** yang muncul sesuai level minimum hunter.
+* Notifikasi tersebut akan tampil secara berkala dan **berganti setiap 3 detik**, memberikan informasi yang bergiliran mengenai dungeon yang terbuka.
+* Fitur ini aktif selama hunter berada di dalam sistem atau telah mengaktifkan menu notifikasi.
+
+Secara teknis, implementasinya dapat berupa:
+
+* Fungsi dengan loop `sleep(3)` yang menampilkan daftar dungeon dari array atau database.
+* Sistem pengecekan level hunter agar hanya dungeon yang relevan yang ditampilkan.
+* Tampilan teks yang muncul di atas menu utama hunter untuk memastikan selalu terlihat.
+
+Fitur ini sangat berguna untuk **menjaga atensi pemain**, membantu mereka mengetahui peluang dungeon yang tersedia secara cepat, serta mendorong partisipasi dalam raid secara lebih aktif.
+
 
 ```c
 void show_dungeon_notifications(struct SystemData *sys_data) {
@@ -560,6 +643,11 @@ void show_dungeon_notifications(struct SystemData *sys_data) {
 
 }
 ```
+
+![Screenshot 2025-05-08 230748](https://github.com/user-attachments/assets/ebf4ba4c-06bc-410b-8166-3d1b027c9adc)
+
+notifikasi akan berjalan setiap 3 detik
+
 
 ### l)
 
