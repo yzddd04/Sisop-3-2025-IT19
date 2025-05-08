@@ -124,7 +124,9 @@ else if (choice == 2) {
                 }
       }    
 ```
+Fitur yang ditampilkan dalam gambar adalah sebuah sistem berbasis Command Line Interface (CLI) yang digunakan untuk mengelola informasi dungeon dalam permainan. Salah satu fitur utamanya adalah "Dungeon Info", yang memungkinkan admin melihat daftar semua dungeon yang telah dibuat dalam sistem. Setiap dungeon memiliki beberapa atribut penting, seperti nama dungeon, level minimum yang diperlukan untuk masuk, serta reward yang diberikan, termasuk pengalaman (EXP), attack (ATK), health points (HP), dan defense (DEF). Selain itu, setiap dungeon juga memiliki key unik sebagai identifikasi khusus.
 
+Untuk membangun fitur ini, diperlukan struktur data yang dapat menyimpan informasi dungeon, seperti struct dalam bahasa C atau class dalam C++. Data dungeon bisa disimpan dalam sebuah array atau list, sehingga bisa diakses dan ditampilkan dengan mudah melalui fungsi tertentu. Selain itu, sistem menu CLI dapat dibuat menggunakan switch-case atau loop untuk menangani input pengguna dan menampilkan informasi dungeon secara interaktif. Jika diperlukan, fitur ini juga bisa diperluas dengan file handling, agar data dungeon dapat disimpan dan dimuat kembali saat program dijalankan ulang.
 
 
 ### f)
