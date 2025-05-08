@@ -60,6 +60,10 @@ Pada tahun 2045, dunia mengalami kekacauan infrastruktur siber. Sebagai mahasisw
 
 ### Logging
 - Setiap aksi dicatat dalam `server.log` dengan format:
+![image](https://github.com/user-attachments/assets/1a1c5777-2432-47d3-9b0c-ab6f8fb0b5d0)
+![image](https://github.com/user-attachments/assets/d8db673f-cb10-46b3-9813-eadd279e00c0)
+
+
 
 ## Soal 2
 Sistem ini merupakan simulasi sistem pengiriman barang berbasis bahasa C untuk perusahaan ekspedisi **RushGo**, yang bertugas menangani pemrosesan pesanan **Express** dan **Regular** secara terpisah namun terintegrasi.
@@ -91,8 +95,14 @@ Agen pengiriman otomatis yang bekerja berdasarkan file `delivery_order.csv` yang
 ### 2. `dispatcher.c`
 Program terminal untuk pengguna yang memungkinkan:
 - Pengiriman manual untuk pesanan `Regular`
+![image](https://github.com/user-attachments/assets/d69b99d5-71cd-4699-8352-4a175098c7fa)
+
 - Melihat status pesanan berdasarkan nama pelanggan
+![image](https://github.com/user-attachments/assets/64a4b255-a04f-43e8-8b3c-a12703455ad9)
+
 - Menampilkan seluruh daftar pesanan beserta statusnya
+![image](https://github.com/user-attachments/assets/3082dd80-0781-47de-8edf-4dddfab8a96c)
+
 
 #### ⚙️ Perintah CLI
 ```bash
